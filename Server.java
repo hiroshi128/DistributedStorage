@@ -14,7 +14,7 @@ import java.io.*;
  * @author Hiroshi Arai
  *
  */
-public class Server implements Store, Retrieve, Ping, Replication, NotifyStoreFinished {
+public class Server implements Store, Retrieve, Ping, Replication, NotifyStoreFinished ,Delete{
 	private static Registry dMgrRegistry;
 	private static DMgrComm dMgrCommStub;
 	private static String serverName;
@@ -86,6 +86,7 @@ public class Server implements Store, Retrieve, Ping, Replication, NotifyStoreFi
 			Server checkConnectionSpeedServer = new Server();
 			Server replicationServer = new Server();
 			Server storeFinishedServer = new Server();
+			Server deleteFileServer = new Server();
 			Store storeStub = (Store) UnicastRemoteObject.exportObject(storeServer, SystemConstant.RMI_STORE_PORT);
 			Retrieve retrieveStub = (Retrieve) UnicastRemoteObject.exportObject(retrieveServer,
 					SystemConstant.RMI_RETRIEVE_PORT);
@@ -95,6 +96,7 @@ public class Server implements Store, Retrieve, Ping, Replication, NotifyStoreFi
 					SystemConstant.RMI_REPLICATION_PORT);
 			NotifyStoreFinished notifyStoreFinishedStub = (NotifyStoreFinished) UnicastRemoteObject
 					.exportObject(storeFinishedServer, SystemConstant.RMI_STORE_FINISHED_PORT);
+			Delete deleteStub = (Delete) UnicastRemoteObject.exportObject(deleteFileServer, SystemConstant.RMI_DELETEFILE_PORT);
 
 			// Bind the remote object's stub in the registry
 			Registry registry;
@@ -104,6 +106,7 @@ public class Server implements Store, Retrieve, Ping, Replication, NotifyStoreFi
 			registry.rebind(SystemConstant.PING_BIND_NAME, checkConnectionSpeedStub);
 			registry.rebind(SystemConstant.REPLICATION_BIND_NAME, replicationStub);
 			registry.rebind(SystemConstant.STOREFINISHED_BIND_NAME, notifyStoreFinishedStub);
+			registry.rebind(SystemConstant.DELETEFILE_BIND_NAME, deleteStub);
 
 			// Prepare to connect DataManager
 			dMgrRegistry = LocateRegistry.getRegistry(dataMangerName, SystemConstant.RMI_DATAMANAGER_PORT);
@@ -217,6 +220,18 @@ public class Server implements Store, Retrieve, Ping, Replication, NotifyStoreFi
 			return;
 		}
 
+	}
+
+	@Override
+	public void deleteFile(String fileName, int client) throws RemoteException {
+		File target = new File("storage/" + Integer.toString(client) + "/"+fileName);
+ 
+		if (!target.exists()) {
+		    return;
+		}
+		if (target.delete()) {
+		    return;
+		}
 	}
 
 }

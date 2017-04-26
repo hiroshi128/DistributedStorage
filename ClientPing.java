@@ -53,11 +53,13 @@ public class ClientPing implements Callable<Void> {
 	public Void call() throws Exception {
 		int latency;
 		ClientDMgrComm report = new ClientDMgrComm(clientID, serverName, reportLatencyStub);
-		while (stopPing == false) {
+		//while (stopPing == false) {
+		while(!Thread.interrupted()){
 			latency = this.ping();
 			report.reportLatency(latency);
 			Thread.sleep(500);
 		}
+		System.out.println("ping finished");
 		return null;
 	}
 }

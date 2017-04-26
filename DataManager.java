@@ -97,12 +97,12 @@ public class DataManager implements DMgrComm {
 						// empirically decided the threshold to load-balancing
 						// noncrowdedLatency x 1.5 is the threshold
 						float noncrowdedLatency = calculateNonCongestedLatency(latencyHistory);
-						if (avgLatency > noncrowdedLatency * 1.5) {
+						if (avgLatency > noncrowdedLatency * 1.2) {
 							putAvoidFlag(serverName);
 						} else {
 							removeAvoidFlag(serverName);
 						}
-						System.out.println("avg:" + avgLatency);
+						System.out.println("avg:" + avgLatency +" noncrowded: "+noncrowdedLatency);
 						if (DEV_MODE) {
 							System.out.println("avg:" + avgLatency);
 						}
@@ -354,6 +354,19 @@ public class DataManager implements DMgrComm {
 	@Override
 	public HashMap<String, Relation> getStoredFileMap() throws RemoteException {
 		return storedFileMap;
+	}
+
+	/**
+	 * remove file info for file deletion.
+	 */
+	@Override
+	public void deleteFileInfo(String fileName) throws RemoteException {
+		if (storedFileMap.containsKey(fileName)) {
+			if (replicatedFileMap.containsKey(fileName)) {
+				replicatedFileMap.remove(fileName);
+			}
+			storedFileMap.remove(fileName);
+		}
 	}
 
 }

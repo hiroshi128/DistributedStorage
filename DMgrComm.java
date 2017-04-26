@@ -32,4 +32,6 @@ public interface DMgrComm extends Remote {
 	public List<String> getCrowdedServers() throws RemoteException;
 	
 	public HashMap<String, Relation> getStoredFileMap() throws RemoteException;
+	
+	public void deleteFileInfo(String fileName) throws RemoteException;
 }

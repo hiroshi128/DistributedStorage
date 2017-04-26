@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Client class. Clients can communicate with DataManager and DataManager will
@@ -25,7 +26,7 @@ import java.util.concurrent.Future;
  */
 public class Client {
 	enum Mode {
-		STORE, RETRIEVE, SHOW_DIR, EXIT, UNKNOWN, SHOW_SERVERS, SHOW_CROWDED_SERVERS
+		STORE, RETRIEVE, SHOW_DIR, EXIT, UNKNOWN, SHOW_SERVERS, SHOW_CROWDED_SERVERS, DELETE
 	};
 
 	private static Registry dMgrRegistry;
@@ -35,6 +36,7 @@ public class Client {
 	private static Ping pingStub;
 	private static NotifyStoreFinished notifyStoreFinishedStub;
 	private static DMgrComm dMgrCommStub;
+	private static Delete deleteStub;
 	private static ClientDMgrComm clientDataManagerOperator;
 	private static ClientFileStore clientFileStoreOperator;
 	private static ClientFileRetrieve clientFileRetrieveOperator;
@@ -42,6 +44,7 @@ public class Client {
 	private static ClientID clientID;
 	private static HostName host;
 	private static Future<Void> pingStatus;
+	private static ExecutorService pingService;
 
 	/**
 	 * main method for Command based file storage client
@@ -61,7 +64,7 @@ public class Client {
 			connectServer(host);
 
 			// for the background latency checking
-			ExecutorService pingService = Executors.newCachedThreadPool();
+			pingService = Executors.newCachedThreadPool();
 			pingStatus = pingService.submit(clientPingOperator);
 
 			//start client loop
@@ -74,7 +77,7 @@ public class Client {
 						connectAnotherServer(requestedServer);
 						host = requestedServer;
 					}
-					System.out.println("Connected to " + host);
+					//System.out.println("Connected to " + host);
 
 					DirectoryViewer.showDirectory(); // to choose files.
 					File selected = chooseStoreFile();
@@ -90,30 +93,58 @@ public class Client {
 					break;
 				case RETRIEVE:
 					System.out.println("Your files on the server:");
-					HashMap<String, Relation> storedFileMap = dMgrCommStub.getStoredFileMap();
-					
-					for(String filename: storedFileMap.keySet()){
-						if(storedFileMap.get(filename).getClientID() == clientID.getID()){
-							System.out.println(filename);
-						}
-					}
-					System.out.println("Please input file name to retrieve > ");
-					BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
-					String input = in.readLine();
+					int fileNum = showFilesOnServer();
 
-					File retrievedFile = new File(input);
-					try {
-						HostName storedServerName = clientDataManagerOperator.findStoredServer(retrievedFile.getName());
-						if (storedServerName != null && storedServerName != host) {
-							System.out.println("Change connection to " + storedServerName + " from " + host);
-							connectAnotherServer(storedServerName);
-							host = storedServerName;
+					if(fileNum == 0){
+						System.out.println("You do not have a file on the server");
+					} else {
+						System.out.println("Please input file name to retrieve > ");
+						BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+						String input = in.readLine();
+	
+						File retrievedFile = new File(input);
+						try {
+							HostName storedServerName = clientDataManagerOperator.findStoredServer(retrievedFile.getName());
+							if (storedServerName != null && storedServerName != host) {
+								//System.out.println("Change connection to " + storedServerName + " from " + host);
+								connectAnotherServer(storedServerName);
+								host = storedServerName;
+							}
+							//System.out.println("Connected to " + host);
+							clientFileRetrieveOperator.fileRetrieve(input, clientID, retrievedFile);
+						} catch (RemoteException e) {
+							System.out.println("File retrieve error");
 						}
-						System.out.println("Connected to " + host);
-						clientFileRetrieveOperator.fileRetrieve(input, clientID, retrievedFile);
-					} catch (RemoteException e) {
-						System.out.println("File retrieve error");
 					}
+					break;
+				case DELETE:
+					System.out.println("Your files on the server:");
+					int targetCounts = showFilesOnServer();
+
+					if(targetCounts == 0){
+						System.out.println("You do not have a file on the server");
+					} else {
+						System.out.println("Please input file name to delete > ");
+						BufferedReader inDelete = new BufferedReader(new InputStreamReader(System.in));
+						String input_delete = inDelete.readLine();
+	
+						File deleteFile = new File(input_delete);
+	
+						try {
+							boolean isDeletion = true;
+							HostName targetFileLocationName = clientDataManagerOperator.findStoredServer(deleteFile.getName(), isDeletion);
+							if (targetFileLocationName != null && targetFileLocationName != host) {
+								//System.out.println("Change connection to " + targetFileLocationName + " from " + host);
+								connectAnotherServer(targetFileLocationName);
+								host = targetFileLocationName;
+							}
+							//System.out.println("Connected to " + host);
+							deleteStub.deleteFile(deleteFile.getName(), clientID.getID());
+						} catch (RemoteException e) {
+							System.out.println("File deletion error");
+						}
+					}
+					
 					break;
 				case SHOW_DIR:
 					DirectoryViewer.showDirectory();
@@ -131,8 +162,16 @@ public class Client {
 				currentMode = modeInput();
 			}
 
-			clientPingOperator.stop(); // stop ping
-			pingService.shutdown();
+			//clientPingOperator.stop(); // stop ping
+			try{
+				pingService.shutdown();
+				if(!pingService.awaitTermination(1000, TimeUnit.MILLISECONDS)){
+					pingService.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				System.out.println("awaitTermination interrupted: " + e);
+				pingService.shutdownNow();
+			} 
 			return;
 
 		} catch (RemoteException e) {
@@ -140,12 +179,25 @@ public class Client {
 			e.printStackTrace();
 		}
 	}
+	
+	private static int showFilesOnServer() throws RemoteException{
+		HashMap<String, Relation> storedFileMap = dMgrCommStub.getStoredFileMap();
+		
+		int fileNum = 0;
+		for(String filename: storedFileMap.keySet()){
+			if(storedFileMap.get(filename).getClientID() == clientID.getID()){
+				System.out.println(filename);
+				fileNum++;
+			}
+		}
+		return fileNum;
+	}
 
 	//Accept user input.
 	private static Mode modeInput() throws IOException {
 		Client.Mode mode;
 		System.out.println(
-				"Please input mode(Store[s], Retrieve[r], ShowDirectory[sd], ShowServers[ss], ShowCrowdedServers[sc], Exit[e]):");
+				"Please input mode(Store[s], Retrieve[r], Delete[d], Exit[e]):");
 		BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
 		String input = in.readLine();
 		if (input == null) {
@@ -163,6 +215,12 @@ public class Client {
 			case "r":
 			case "retrieve":
 				mode = Client.Mode.RETRIEVE;
+				break;
+			case "Delete":
+			case "D":
+			case "d":
+			case "delete":
+				mode = Client.Mode.DELETE;
 				break;
 			case "ShowDirectory":
 			case "SD":
@@ -231,7 +289,19 @@ public class Client {
 			setUpStubs();
 
 			clientPingOperator.update(serverHost, pingStub, dMgrCommStub);
-			ExecutorService pingService = Executors.newCachedThreadPool();
+			
+			//stop old ping thread
+			try{
+				pingService.shutdown();
+				if(!pingService.awaitTermination(1000, TimeUnit.MILLISECONDS)){
+					pingService.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				System.out.println("awaitTermination interrupted: " + e);
+				pingService.shutdownNow();
+			} 
+		
+			pingService = Executors.newCachedThreadPool();
 			pingStatus = pingService.submit(clientPingOperator);
 		} catch (RemoteException e) {
 			System.out.println("connect error");
@@ -251,6 +321,7 @@ public class Client {
 			clientFileRetrieveOperator = new ClientFileRetrieve(retrieveStub);
 			pingStub = (Ping) srvRegistry.lookup(SystemConstant.PING_BIND_NAME);
 			dMgrCommStub = (DMgrComm) dMgrRegistry.lookup(SystemConstant.DMGR_BIND_NAME);
+			deleteStub = (Delete) srvRegistry.lookup(SystemConstant.DELETEFILE_BIND_NAME);
 			clientDataManagerOperator = new ClientDMgrComm(clientID, host, dMgrCommStub);
 			clientPingOperator = new ClientPing(clientID, host, pingStub, dMgrCommStub);
 		} catch (AccessException e) {

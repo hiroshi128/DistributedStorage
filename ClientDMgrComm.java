@@ -44,6 +44,14 @@ public class ClientDMgrComm {
 	 * @throws RemoteException
 	 */
 	public HostName findStoredServer(String fileName) throws RemoteException {
+		return this.findStoredServer(fileName, false);
+	}
+	
+	public HostName findStoredServer(String fileName, boolean isDelete) throws RemoteException {
+
+		if(isDelete == true){
+			dMgrCommStub.deleteFileInfo(fileName);
+		}
 		HostName serverName = null;
 		Relation storedInfo = dMgrCommStub.retrieveStoreInfo(fileName);
 		if (storedInfo != null) {
